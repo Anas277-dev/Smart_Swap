@@ -13,9 +13,11 @@
     "@google/generative-ai": "^0.24.1",
     "agora-access-token": "^2.0.4",
     "agora-token": "^2.0.5",
+    "cloudinary": "^1.41.3",
     "dotenv": "^17.2.3",
     "express": "^5.1.0",
     "multer": "^2.0.2",
+    "multer-storage-cloudinary": "^4.0.0",
     "openai": "^6.10.0",
     "pg": "^8.16.3"
   }
