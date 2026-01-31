@@ -2,57 +2,42 @@ const express = require("express");
 const router = express.Router();
 const { Pool } = require("pg");
 const multer = require("multer");
-const path = require("path");
-const fs = require("fs");
+const cloudinary = require("cloudinary").v2;
+const { CloudinaryStorage } = require("multer-storage-cloudinary");
 require("dotenv").config();
 
-// ---------------- DB ----------------
+// ---------------- DB CONNECTION ----------------
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
   ssl: { rejectUnauthorized: false },
 });
 
-// ---------------- MULTER CONFIG ----------------
+// ---------------- CLOUDINARY CONFIG ----------------
+// Ye credentials Vercel dashboard ya .env se aayenge
+cloudinary.config({
+  cloud_name: process.env.CLOUD_NAME,
+  api_key: process.env.API_KEY,
+  api_secret: process.env.API_SECRET,
+});
 
-const uploadDir = "uploads/profiles";
-if (!fs.existsSync(uploadDir)) {
-  fs.mkdirSync(uploadDir, { recursive: true });
-}
-
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    cb(null, uploadDir);
-  },
-  filename: (req, file, cb) => {
-    const uniqueName = Date.now() + "-" + Math.round(Math.random() * 1e9);
-    cb(null, uniqueName + path.extname(file.originalname));
+// Multer ko Cloudinary ke saath link karna
+const storage = new CloudinaryStorage({
+  cloudinary: cloudinary,
+  params: {
+    folder: "smart_swap_profiles", // Cloudinary mein is naam ka folder banega
+    allowed_formats: ["jpg", "png", "jpeg", "jfif", "webp"],
   },
 });
 
-// Better File Filter (added jfif support)
-const fileFilter = (req, file, cb) => {
-  const allowedTypes = ["image/jpeg", "image/png", "image/jpg", "image/webp", "image/jfif"];
-  if (allowedTypes.includes(file.mimetype) || file.originalname.match(/\.(jpg|jpeg|png|gif|jfif)$/i)) {
-    cb(null, true);
-  } else {
-    cb(new Error("Only image files (jpg, png, jfif) are allowed"), false);
-  }
-};
-
-const upload = multer({
-  storage,
-  fileFilter,
-  limits: { fileSize: 5 * 1024 * 1024 }, // 5MB
-});
+const upload = multer({ storage: storage });
 
 // ---------------- ROUTES ----------------
 
+/**
+ * ✅ CREATE PROFILE (Vercel & Cloudinary Ready)
+ */
 router.post("/", upload.single("profile_image"), async (req, res) => {
   try {
-    // Debugging logs (Check your terminal)
-    console.log("File received:", req.file); 
-    console.log("Body received:", req.body);
-
     const {
       user_id,
       full_name,
@@ -72,8 +57,8 @@ router.post("/", upload.single("profile_image"), async (req, res) => {
       });
     }
 
-    // Fixed Image URL logic
-    const imageUrl = req.file ? `/uploads/profiles/${req.file.filename}` : null;
+    // Cloudinary URL: req.file.path mein automatic cloud link aa jata hai
+    const imageUrl = req.file ? req.file.path : null;
 
     const safeStream = [0, 1].includes(Number(stream)) ? Number(stream) : 0;
     const safeStatus = status !== undefined ? Number(status) : 0;
@@ -93,7 +78,7 @@ router.post("/", upload.single("profile_image"), async (req, res) => {
       bio || null,
       phone_no || null,
       address || null,
-      imageUrl, // This will now correctly save the path
+      imageUrl, // Yahan 'https://res.cloudinary.com/...' wala link save hoga
       safeStatus
     ];
 
@@ -101,12 +86,12 @@ router.post("/", upload.single("profile_image"), async (req, res) => {
 
     res.status(201).json({
       success: true,
-      message: "✅ Profile created successfully",
+      message: "✅ Profile created. Image saved on Cloudinary!",
       profile: result.rows[0],
     });
 
   } catch (err) {
-    console.error("Create Profile Error:", err);
+    console.error("Vercel Error:", err.message);
     if (err.code === "23505") {
       return res.status(400).json({ success: false, message: "Profile already exists" });
     }
@@ -114,6 +99,9 @@ router.post("/", upload.single("profile_image"), async (req, res) => {
   }
 });
 
+/**
+ * ✅ GET PROFILE
+ */
 router.get("/:user_id", async (req, res) => {
   try {
     const { user_id } = req.params;
